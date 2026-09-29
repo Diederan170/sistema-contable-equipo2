@@ -1,8 +1,12 @@
+"""
+ContaPlus - Sistema de Administración Contable
+Punto de entrada de la aplicación Flask.
 
+"""
 
 from datetime import date, datetime
 
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session
 
 from config import Config
 from database.conexion import probar_conexion, ErrorBaseDatos
@@ -22,9 +26,10 @@ app.config.from_object(Config)
 ErroresNegocio = (ErrorClientes, ErrorContabilidad, ErrorFacturas, ErrorBaseDatos)
 
 
-
+# ------------------------------------------------------------------
 # Manejo centralizado de errores: nunca se muestra el error técnico
-
+# crudo al usuario, siempre un mensaje comprensible.
+# ------------------------------------------------------------------
 
 @app.errorhandler(ErrorBaseDatos)
 def manejar_error_bd(error):
@@ -40,9 +45,58 @@ def pagina_no_encontrada(error):
 def _hoy():
     return date.today().isoformat()
 
+#-------------------------------------------------------------------
+#login
+#-------------------------------------------------------------------
+app.secret_key = 'clave_secreta_contaplus_123'
 
+# ------------------------------------------------------------------
+# AUTENTICACIÓN
+# ------------------------------------------------------------------
 
-# RUTA RAÍZ Y DASHB
+USUARIO_ADMIN = "admin"
+PASSWORD_ADMIN = "12345"
+
+RUTAS_PUBLICAS = ['login', 'static']
+
+@app.before_request
+def requerir_login():
+    """Redirige al login si el usuario no ha iniciado sesión."""
+    # Ignorar archivos estáticos (CSS, JavaScript, imágenes)
+    if request.endpoint == 'static' or (request.path and request.path.startswith('/static')):
+        return
+
+    # Si la ruta no es pública y no hay usuario en sesión, pedir login
+    if request.endpoint and request.endpoint not in RUTAS_PUBLICAS and 'usuario' not in session:
+        flash("Debes iniciar sesión para acceder.", "error")
+        return redirect(url_for("login"))
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if 'usuario' in session:
+        return redirect(url_for("dashboard"))
+
+    if request.method == "POST":
+        usuario = request.form.get("usuario", "").strip()
+        password = request.form.get("password", "").strip()
+
+        if usuario == USUARIO_ADMIN and password == PASSWORD_ADMIN:
+            session["usuario"] = usuario
+            flash(f"¡Bienvenido, {usuario}!", "exito")
+            return redirect(url_for("dashboard"))
+        else:
+            flash("Usuario o contraseña incorrectos.", "error")
+
+    return render_template("login.html")
+
+@app.route("/logout")
+def logout():
+    session.pop("usuario", None)
+    flash("Has cerrado sesión.", "exito")
+    return redirect(url_for("login"))
+# ------------------------------------------------------------------
+# RUTA RAÍZ Y DASHBOARD
+# ------------------------------------------------------------------
 
 @app.route("/")
 def index():
@@ -60,9 +114,9 @@ def dashboard():
     return render_template("dashboard.html", resumen=resumen, recientes=recientes)
 
 
-
+# ------------------------------------------------------------------
 # CLIENTES
-
+# ------------------------------------------------------------------
 
 @app.route("/clientes")
 def clientes():
@@ -134,9 +188,9 @@ def clientes_eliminar(cliente_id):
     return redirect(url_for("clientes"))
 
 
-
+# ------------------------------------------------------------------
 # INGRESOS
-
+# ------------------------------------------------------------------
 
 @app.route("/ingresos")
 def ingresos():
@@ -231,9 +285,9 @@ def egresos_eliminar(egreso_id):
     return redirect(url_for("egresos"))
 
 
-
+# ------------------------------------------------------------------
 # FACTURAS
-
+# ------------------------------------------------------------------
 
 @app.route("/facturas")
 def facturas():
@@ -287,9 +341,9 @@ def facturas_eliminar(factura_id):
     return redirect(url_for("facturas"))
 
 
-
+# ------------------------------------------------------------------
 # CUENTAS POR COBRAR / PAGAR
-
+# ------------------------------------------------------------------
 
 @app.route("/cuentas-cobrar")
 def cuentas_cobrar():
@@ -349,9 +403,9 @@ def cuentas_pagar_eliminar(cuenta_id):
     return redirect(url_for("cuentas_pagar"))
 
 
-
+# ------------------------------------------------------------------
 # HISTORIAL (PILA - LIFO)
-
+# ------------------------------------------------------------------
 
 @app.route("/historial")
 def historial():
@@ -379,9 +433,9 @@ def historial_pop():
     return redirect(url_for("historial"))
 
 
-
+# ------------------------------------------------------------------
 # COLA DE FACTURAS (FIFO)
-
+# ------------------------------------------------------------------
 
 @app.route("/cola")
 def cola():
@@ -410,9 +464,9 @@ def cola_procesar():
     return redirect(url_for("cola"))
 
 
-
+# ------------------------------------------------------------------
 # REPORTES
-
+# ------------------------------------------------------------------
 
 @app.route("/reportes")
 def reportes():
@@ -424,9 +478,9 @@ def reportes():
     return render_template("reportes.html", resumen=resumen)
 
 
-
+# ------------------------------------------------------------------
 # UTILIDAD: estado del almacenamiento en memoria
-
+# ------------------------------------------------------------------
 
 @app.route("/api/estado-bd")
 def api_estado_bd():
@@ -434,8 +488,16 @@ def api_estado_bd():
     return jsonify({"conectado": conectado})
 
 
-
-# DATOS DE PRUEBA 
+# ------------------------------------------------------------------
+# DATOS DE PRUEBA (solo en modo DEBUG)
+#
+# Como este semestre los datos viven en memoria (no en una base de
+# datos), correr "python datos_prueba.py" como script aparte no
+# funciona: sería un proceso distinto al de "python app.py", con su
+# propia memoria vacía. Estas rutas ejecutan las mismas funciones
+# pero DENTRO del proceso de Flask que ya está corriendo, así que sí
+# quedan disponibles de inmediato en el sistema.
+# ------------------------------------------------------------------
 
 if Config.DEBUG:
     import datos_prueba
